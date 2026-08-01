@@ -33,14 +33,6 @@ def _enrich(results: list[dict]) -> list[dict]:
 # ------------------------------------------------------------------ #
 
 class SimilarMoviesView(APIView):
-    """
-    GET /api/recommendations/similar/<movie_id>/
-    Returns movies similar to the given movie using NLP (NLTK + TF-IDF).
-
-    Query params:
-      ?top_n=10        — number of results (default 10, max 50)
-      ?semantic=false  — use sentence-transformer embeddings (default false / TF-IDF)
-    """
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, movie_id):
@@ -52,9 +44,12 @@ class SimilarMoviesView(APIView):
         top_n = min(int(request.query_params.get('top_n', 10)), 50)
         use_semantic = request.query_params.get('semantic', 'false').lower() == 'true'
 
-        recommender = get_recommender()
-        results = recommender.similar_to_movie(movie_id, top_n=top_n, use_semantic=use_semantic)
-        enriched = _enrich(results)
+        try:
+            recommender = get_recommender()
+            results = recommender.similar_to_movie(movie_id, top_n=top_n, use_semantic=use_semantic)
+            enriched = _enrich(results)
+        except Exception:
+            enriched = []
 
         serializer = RecommendationResultSerializer(enriched, many=True)
         return Response(serializer.data)
@@ -113,9 +108,12 @@ class QueryRecommendView(APIView):
         top_n = min(int(request.data.get('top_n', 10)), 50)
         use_semantic = str(request.data.get('semantic', False)).lower() == 'true'
 
-        recommender = get_recommender()
-        results = recommender.similar_to_query(query, top_n=top_n, use_semantic=use_semantic)
-        enriched = _enrich(results)
+        try:
+            recommender = get_recommender()
+            results = recommender.similar_to_query(query, top_n=top_n, use_semantic=use_semantic)
+            enriched = _enrich(results)
+        except Exception:
+            enriched = []
 
         serializer = RecommendationResultSerializer(enriched, many=True)
         return Response(serializer.data)
