@@ -247,7 +247,11 @@ class MovieRecommender:
 
     def _ensure_built(self) -> None:
         if not self._built:
-            self.build()
+            try:
+                self.build()
+            except Exception as e:
+                logger.warning(f"Recommender build failed: {e}")
+                self._built = False
 
     def _idx_of(self, movie_id: int) -> int | None:
         try:
@@ -282,101 +286,98 @@ class MovieRecommender:
     #  Public API
     # ---------------------------------------------------------------- #
 
-    def similar_to_movie(
-        self,
-        movie_id: int,
-        top_n: int = 10,
-        use_semantic: bool = False,
-    ) -> list[dict]:
-        self._ensure_built()
-        idx = self._idx_of(movie_id)
-        if idx is None:
-            return []
-        if use_semantic and self._embeddings is not None:
-            scores = self._st_scores(self._embeddings[idx])
-        else:
-            scores = self._tfidf_scores(self._tfidf_matrix[idx])
-        return self._top_results(scores, exclude_ids={movie_id}, top_n=top_n)
-
-    def similar_to_query(
-        self,
-        query: str,
-        top_n: int = 10,
-        use_semantic: bool = False,
-    ) -> list[dict]:
-        self._ensure_built()
-        from .nlp_utils import preprocess
-
-        if use_semantic and self._embeddings is not None:
-            if self._st_model is None:
-                self._st_model = SentenceTransformer("all-MiniLM-L6-v2")
-            query_vec = self._st_model.encode([query], convert_to_numpy=True)[0]
-            scores = self._st_scores(query_vec)
-        else:
-            cleaned = preprocess(query)
-            if not cleaned:
+    def similar_to_movie(self, movie_id, top_n=10, use_semantic=False):
+        try:
+            self._ensure_built()
+            if not self._built:
                 return []
-            query_vec = self._vectorizer.transform([cleaned])
-            scores = self._tfidf_scores(query_vec)
-
-        return self._top_results(scores, exclude_ids=set(), top_n=top_n)
-
-    def personalized_for_user(
-        self,
-        user_id: int,
-        top_n: int = 10,
-        use_semantic: bool = False,
-    ) -> list[dict]:
-        self._ensure_built()
-        from recommendations.models import UserWatchHistory, UserRating
-
-        watched_ids = set(
-            UserWatchHistory.objects.filter(user_id=user_id)
-            .values_list("movie_id", flat=True)
-        )
-        if not watched_ids:
+            idx = self._idx_of(movie_id)
+            if idx is None:
+                return []
+            if use_semantic and self._embeddings is not None:
+                scores = self._st_scores(self._embeddings[idx])
+            else:
+                scores = self._tfidf_scores(self._tfidf_matrix[idx])
+            return self._top_results(scores, exclude_ids={movie_id}, top_n=top_n)
+        except Exception as e:
+            logger.warning(f"similar_to_movie error: {e}")
             return []
 
-        ratings = {
-            r.movie_id: r.score
-            for r in UserRating.objects.filter(user_id=user_id)
-        }
-
-        if use_semantic and self._embeddings is not None:
-            dim     = self._embeddings.shape[1]
-            profile = np.zeros(dim, dtype=np.float32)
-            total_w = 0.0
-            for mid in watched_ids:
-                idx = self._idx_of(mid)
-                if idx is None:
-                    continue
-                w        = ratings.get(mid, 5.0)
-                profile += self._embeddings[idx] * w
-                total_w += w
-            if total_w == 0:
+    def similar_to_query(self, query, top_n=10, use_semantic=False):
+        try:
+            self._ensure_built()
+            if not self._built:
                 return []
-            profile /= total_w
-            scores = self._st_scores(profile)
-        else:
-            dim     = self._tfidf_matrix.shape[1]
-            profile = np.zeros(dim, dtype=np.float32)
-            total_w = 0.0
-            for mid in watched_ids:
-                idx = self._idx_of(mid)
-                if idx is None:
-                    continue
-                w        = ratings.get(mid, 5.0)
-                profile += self._tfidf_matrix[idx].toarray()[0] * w
-                total_w += w
-            if total_w == 0:
-                return []
-            profile /= total_w
-            from scipy.sparse import csr_matrix
-            scores = cosine_similarity(
-                csr_matrix(profile.reshape(1, -1)), self._tfidf_matrix
-            )[0]
+            from .nlp_utils import preprocess
+            if use_semantic and self._embeddings is not None:
+                if self._st_model is None:
+                    self._st_model = SentenceTransformer("all-MiniLM-L6-v2")
+                query_vec = self._st_model.encode([query], convert_to_numpy=True)[0]
+                scores = self._st_scores(query_vec)
+            else:
+                cleaned = preprocess(query)
+                if not cleaned:
+                    return []
+                query_vec = self._vectorizer.transform([cleaned])
+                scores = self._tfidf_scores(query_vec)
+            return self._top_results(scores, exclude_ids=set(), top_n=top_n)
+        except Exception as e:
+            logger.warning(f"similar_to_query error: {e}")
+            return []
 
-        return self._top_results(scores, exclude_ids=watched_ids, top_n=top_n)
+    def personalized_for_user(self, user_id, top_n=10, use_semantic=False):
+        try:
+            self._ensure_built()
+            if not self._built:
+                return []
+            from recommendations.models import UserWatchHistory, UserRating
+            watched_ids = set(
+                UserWatchHistory.objects.filter(user_id=user_id)
+                .values_list("movie_id", flat=True)
+            )
+            if not watched_ids:
+                return []
+            ratings = {
+                r.movie_id: r.score
+                for r in UserRating.objects.filter(user_id=user_id)
+            }
+            if use_semantic and self._embeddings is not None:
+                dim     = self._embeddings.shape[1]
+                profile = np.zeros(dim, dtype=np.float32)
+                total_w = 0.0
+                for mid in watched_ids:
+                    idx = self._idx_of(mid)
+                    if idx is None:
+                        continue
+                    w        = ratings.get(mid, 5.0)
+                    profile += self._embeddings[idx] * w
+                    total_w += w
+                if total_w == 0:
+                    return []
+                profile /= total_w
+                scores = self._st_scores(profile)
+            else:
+                dim     = self._tfidf_matrix.shape[1]
+                profile = np.zeros(dim, dtype=np.float32)
+                total_w = 0.0
+                for mid in watched_ids:
+                    idx = self._idx_of(mid)
+                    if idx is None:
+                        continue
+                    w        = ratings.get(mid, 5.0)
+                    profile += self._tfidf_matrix[idx].toarray()[0] * w
+                    total_w += w
+                if total_w == 0:
+                    return []
+                profile /= total_w
+                from scipy.sparse import csr_matrix
+                scores = cosine_similarity(
+                    csr_matrix(profile.reshape(1, -1)), self._tfidf_matrix
+                )[0]
+            return self._top_results(scores, exclude_ids=watched_ids, top_n=top_n)
+        except Exception as e:
+            logger.warning(f"personalized_for_user error: {e}")
+            return []
 
     def genre_based(self, genre: str, top_n: int = 10) -> list[dict]:
         return self.similar_to_query(genre, top_n=top_n, use_semantic=False)
