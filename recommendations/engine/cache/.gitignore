@@ -1,0 +1,6 @@
+# Ignore all cache files — these are auto-generated
+*.pkl
+*.npy
+# Keep the directory itself
+!.gitkeep
+!.gitignore
