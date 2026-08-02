@@ -81,6 +81,10 @@ class MovieRecommender:
 
     def _cache_valid(self, current_count: int) -> bool:
         """Return True if all cache files exist and movie count matches."""
+        # On Render (ephemeral filesystem) cache files won't persist — skip file cache
+        import os
+        if os.environ.get("RENDER"):
+            return False
         required = [_F_VECTORIZER, _F_MATRIX, _F_IDS, _F_META]
         if not all(f.exists() for f in required):
             return False
