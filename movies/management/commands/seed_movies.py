@@ -176,6 +176,10 @@ class Command(BaseCommand):
             return
 
         self.stdout.write("Importing cast from marvel_cast.csv…")
+
+        # Always clear cast before re-seeding to prevent duplicates on re-deploy
+        Cast.objects.all().delete()
+        self.stdout.write("  Cast cleared.")
         cast_created = 0
         cast_skipped = 0
 

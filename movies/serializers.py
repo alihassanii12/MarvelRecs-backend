@@ -24,9 +24,19 @@ class MovieListSerializer(serializers.ModelSerializer):
 
 
 class MovieDetailSerializer(serializers.ModelSerializer):
-    """Full serializer with cast for detail views."""
-    cast_members = CastSerializer(many=True, read_only=True)
+    """Full serializer with cast for detail views — deduped by actor+character."""
+    cast_members = serializers.SerializerMethodField()
+
+    def get_cast_members(self, obj):
+        seen = set()
+        result = []
+        for c in obj.cast_members.all():
+            key = (c.actor_name, c.character, c.cast_order)
+            if key not in seen:
+                seen.add(key)
+                result.append(CastSerializer(c).data)
+        return result
 
     class Meta:
         model = Movie
-        exclude = ['embedding']  # don't expose raw embedding vectors
+        exclude = ['embedding']
